@@ -15,13 +15,15 @@ To satisfy the requirements of a Kubernetes-ready REST API, the following Python
     *   **Rejected Alternatives:** *Marshmallow* requires writing verbose, separate validation schemas instead of utilizing standard Python type hints.
 
 *   **Database ORM: SQLAlchemy (`sqlalchemy`)**
-    *   **Rationale:** Industry-standard Object-Relational Mapper that abstracts raw SQL into Python objects, preventing SQL injection.
-    *   **Rejected Alternatives:** *Raw SQL* is highly vulnerable to injection attacks and difficult to maintain. *Peewee* lacks enterprise-grade relationship handling.
+    *   **Rationale:** Industry-standard ORM that maps tables and relationships to Python classes, keeping queries maintainable as the schema grows. Integrates with Alembic for versioned schema migrations. Parameterises queries by default, making SQL injection difficult to introduce accidentally.
+    *   **Rejected Alternatives:** *Raw SQL* (with parameterised queries) is safe but becomes hard to maintain across joins, relationships and schema changes, with no migration tooling. *Peewee* has a smaller ecosystem and weaker support for complex relationships and migrations.
 
 *   **Database Driver: Psycopg2 (`psycopg2-binary`)**
-    *   **Rationale:** The required PostgreSQL adapter that establishes the physical TCP connection between the application and the database.
-    *   **Rejected Alternatives:** N/A (Standard required driver for Postgres in Python).
+    *   **Rationale:** Mature, widely deployed PostgreSQL driver with a simple synchronous model. Because the driver is synchronous, API routes are defined as standard `def` functions, which FastAPI executes in a threadpool so blocking database calls do not stall the event loop. Horizontal scaling is handled by Kubernetes (more pods) rather than in-process concurrency.
+    *   **Rejected Alternatives:** *asyncpg* offers higher throughput but requires SQLAlchemy's async engine and async sessions throughout, adding complexity with no meaningful benefit at this project's scale. *psycopg (v3)* supports both sync and async and is the likely upgrade path if async database access becomes necessary.
 
 *   **Testing Suite: Pytest & HTTPX (`pytest`, `httpx`)**
-    *   **Rationale:** Combines a lightweight test runner with an asynchronous HTTP client to simulate live API requests for CI/CD.
-    *   **Rejected Alternatives:** *Requests* cannot properly execute asynchronous requests against local FastAPI endpoints.
+    *   **Rationale:** Pytest provides fixtures for isolated test setup, such as overriding the database dependency. FastAPI's `TestClient` is built on HTTPX and calls the application in-process through the ASGI interface, so endpoint tests run without starting a server. This keeps tests fast and suitable for CI.
+    *   **Rejected Alternatives:** *Requests* can only send real HTTP requests over the network, so tests would need a running server, making CI slower and more fragile. *unittest* works but is more verbose, and its fixture handling is less flexible.
+
+    
