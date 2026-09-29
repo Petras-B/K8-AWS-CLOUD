@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # This tells Pydantic to look for a file named .env to load these variables
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # extra="ignore": .env may hold values for other tools (e.g. TEST_DATABASE_URL for pytest)
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 # Create a global instance of the settings to be used across the app
 settings = Settings()

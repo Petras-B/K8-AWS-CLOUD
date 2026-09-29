@@ -11,7 +11,9 @@ from app import models  # noqa: F401  (import registers the tables on Base.metad
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: when migrations run inside the app's process (e.g. the
+    # test suite), don't silence loggers the app already created
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Autogenerate compares this metadata (our models) against the live database
 target_metadata = Base.metadata
