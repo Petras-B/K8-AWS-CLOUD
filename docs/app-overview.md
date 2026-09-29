@@ -1,6 +1,6 @@
 # Application Overview
 
-A REST API for managing **Projects** and **Tasks**, built with FastAPI and PostgreSQL and designed to run on Kubernetes on AWS.
+A REST API for managing **Projects** and **Tasks**, built with FastAPI and PostgreSQL. It is designed to be deployed on Kubernetes on AWS; that infrastructure is planned and not yet built.
 
 - A project has many tasks; a task belongs to exactly one project.
 - Deleting a project deletes its tasks.
@@ -80,7 +80,7 @@ HTTP request
 
 ## Configuration
 
-All configuration comes from environment variables (or `.env` locally). Nothing is hardcoded, so the same image runs in every environment.
+All configuration comes from environment variables (or `.env` locally). Nothing is hardcoded, so the same build can run in any environment by changing only its environment variables.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -91,7 +91,7 @@ All configuration comes from environment variables (or `.env` locally). Nothing 
 | `DB_CONNECT_TIMEOUT` | No | `3` | Seconds to wait when opening a connection |
 | `TEST_DATABASE_URL` | Tests only | – | Database used by the test suite |
 
-Maximum database connections = number of pods × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`). Keep this below the database's `max_connections` when scaling.
+Maximum database connections = number of application instances × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`). Keep this below the database's `max_connections`; this will matter when the application is scaled out as multiple pods on Kubernetes (planned).
 
 ---
 
@@ -115,7 +115,7 @@ def get_db():
 
 ### Synchronous routes
 
-psycopg2 is a blocking driver, so every route is a plain `def`. FastAPI runs `def` routes in a threadpool, keeping blocking database calls off the event loop. Declaring them `async def` would run blocking calls on the event loop and stall all concurrent requests. Horizontal scaling is handled by running more pods.
+psycopg2 is a blocking driver, so every route is a plain `def`. FastAPI runs `def` routes in a threadpool, keeping blocking database calls off the event loop. Declaring them `async def` would run blocking calls on the event loop and stall all concurrent requests. Horizontal scaling is intended to come from running more instances (pods on Kubernetes, planned) rather than from in-process concurrency.
 
 The request-logging middleware is `async` because it wraps the ASGI call chain; it does not access the database.
 
@@ -126,13 +126,15 @@ The request-logging middleware is `async` because it wraps the ASGI call chain; 
 
 ### Health checks
 
+Both endpoints are implemented. They are intended as Kubernetes liveness and readiness probes; the probe configuration will be added with the Kubernetes manifests (planned).
+
 | | `/healthz` (liveness) | `/readyz` (readiness) |
 |---|---|---|
 | Question | Is the process running and serving HTTP? | Can this instance handle traffic right now? |
 | Check | None | `SELECT 1` against the database |
-| Kubernetes action on failure | Restarts the container | Removes the pod from Service endpoints until it recovers |
+| Kubernetes action on failure, once probes are configured | Restarts the container | Removes the pod from Service endpoints until it recovers |
 
-Liveness deliberately does not depend on the database. A database outage should stop traffic to the pods, not restart them: restarting cannot fix the database and would cause every pod to reconnect at once when it returns.
+Liveness deliberately does not depend on the database. Once the application runs on Kubernetes, a database outage should stop traffic to the pods, not restart them: restarting cannot fix the database and would cause every pod to reconnect at once when it returns.
 
 ### Models and schemas
 
@@ -177,7 +179,7 @@ Liveness deliberately does not depend on the database. A database outage should 
 
 ### Logging
 
-Logs are written to stdout as one JSON object per line, for collection by the container runtime and shipping to CloudWatch.
+Logs are written to stdout as one JSON object per line, so they can be collected and shipped to CloudWatch. Log shipping to CloudWatch is planned for the observability phase.
 
 ```json
 {"timestamp": "2026-09-29T11:19:27.745151+00:00", "level": "INFO", "logger": "app", "message": "request", "method": "GET", "path": "/tasks", "status_code": 200, "duration_ms": 3.07}
@@ -204,9 +206,11 @@ alembic revision --autogenerate -m "description"  # generate a new migration, th
 alembic current                                   # show the applied revision
 ```
 
-### Running migrations in production
+### Running migrations in production (planned)
 
-Migrations run as a Kubernetes Job, once per deployment, before the Deployment is updated:
+None of this deployment pipeline exists yet. Migrations are currently run by hand with `alembic upgrade head`.
+
+Migrations will run as a Kubernetes Job, once per deployment, before the Deployment is updated:
 
 ```
 build and push image
@@ -215,13 +219,13 @@ build and push image
  → roll out the Deployment
 ```
 
-- Running once avoids concurrent migrations from multiple replicas.
-- Using the application image keeps migration files in step with the code.
-- A failed migration stops the deployment while the previous version keeps serving.
-- The Job can use database credentials with schema-change privileges, while the application uses read/write-only credentials.
-- The database is in private subnets, so migrations run inside the cluster rather than from the CI runner.
+- Running once will avoid concurrent migrations from multiple replicas.
+- Using the application image will keep migration files in step with the code.
+- A failed migration will stop the deployment while the previous version keeps serving.
+- The Job will use database credentials with schema-change privileges, while the application will use read/write-only credentials.
+- The database will be in private subnets, so migrations will run inside the cluster rather than from the CI runner.
 
-During a rolling update, old and new pods run against the new schema at the same time, so migrations must be backward compatible (expand/contract):
+During a rolling update, old and new pods will run against the new schema at the same time, so migrations must be backward compatible (expand/contract). This rule applies to every migration written from now on:
 
 1. **Expand:** add new tables or nullable columns that the old code ignores.
 2. **Deploy** code that uses the new structure.
@@ -233,7 +237,7 @@ During a rolling update, old and new pods run against the new schema at the same
 
 The suite runs against a real PostgreSQL database, because behaviour the application relies on (enum types, `timestamptz`, constraint error reporting, cascade deletes) differs in SQLite.
 
-- `TEST_DATABASE_URL` is read from the environment (CI) or `.env` (local). The suite refuses to run unless the database name contains `test`.
+- `TEST_DATABASE_URL` is read from the environment or, locally, from `.env`. Reading it from the environment is what will let the planned CI pipeline point the tests at a PostgreSQL service container. The suite refuses to run unless the database name contains `test`.
 - `DATABASE_URL` is overridden with the test URL before the application is imported, so the tests cannot reach any other database.
 - The schema is created by running `alembic upgrade head` once per session, so the tests also verify the migrations.
 
@@ -305,4 +309,4 @@ After the first run, `docker start k8aws-postgres` starts the existing database;
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `test:`, `build:`, `chore:`, `refactor:`, `ci:`).
 - `.env` is never committed; `.env.example` documents every variable.
-- `.gitattributes` enforces LF line endings for all text files, since the application runs in Linux containers.
+- `.gitattributes` enforces LF line endings for all text files, since the application will run in Linux containers.
