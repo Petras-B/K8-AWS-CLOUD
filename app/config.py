@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     # so these are tunable per environment rather than hardcoded in database.py
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
+    # Seconds to wait when opening a new DB connection. Keeps /readyz fast when the DB is
+    # unreachable, instead of hanging until the OS gives up on the TCP connect.
+    DB_CONNECT_TIMEOUT: int = 3
+
+    LOG_LEVEL: str = "INFO"
 
     # This tells Pydantic to look for a file named .env to load these variables
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

@@ -13,6 +13,7 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
+    connect_args={"connect_timeout": settings.DB_CONNECT_TIMEOUT},
 )
 
 # A factory for sessions. Each request gets its own session (unit of work).
