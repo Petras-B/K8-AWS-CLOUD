@@ -30,6 +30,7 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
         passive_deletes=True,
+        order_by="Task.id",
     )
 
 
