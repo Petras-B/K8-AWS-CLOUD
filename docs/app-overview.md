@@ -273,35 +273,132 @@ python -m pytest -k join    # run tests matching a keyword
 
 ## Local development
 
-Prerequisites: Python 3.11+, Docker.
+Prerequisites: Python 3.11+ and Docker (Docker Desktop on Windows and macOS). Run all commands from the repository root.
 
-```bash
-# 1. Start PostgreSQL
-docker run -d --name k8aws-postgres \
-  -e POSTGRES_PASSWORD=<password> -e POSTGRES_DB=api_db \
-  -p 5432:5432 -v k8aws-pgdata:/var/lib/postgresql/data \
-  --restart unless-stopped postgres:16
-docker exec k8aws-postgres psql -U postgres -c "CREATE DATABASE api_db_test;"
+Each step shows **PowerShell** (Windows) first, then **bash** (macOS/Linux). The commands call the tools inside `venv` directly, so the virtual environment does not need to be activated.
 
-# 2. Install dependencies
-python -m venv venv
-venv\Scripts\pip install -r requirements.txt      # Windows
-# source venv/bin/activate && pip install -r requirements.txt   # macOS/Linux
+### 1. Start PostgreSQL
 
-# 3. Configure
-copy .env.example .env    # then set DATABASE_URL and TEST_DATABASE_URL
+Choose a password; it goes into `.env` in step 3.
 
-# 4. Create the schema
-venv\Scripts\alembic upgrade head
+PowerShell:
 
-# 5. Run the API (http://localhost:8000/docs)
-venv\Scripts\uvicorn app.main:app --reload
-
-# 6. Run the tests
-venv\Scripts\python -m pytest
+```powershell
+$pgPassword = "choose-a-password"
+docker run -d --name k8aws-postgres -e POSTGRES_PASSWORD=$pgPassword -e POSTGRES_DB=api_db -p 5432:5432 -v k8aws-pgdata:/var/lib/postgresql/data --restart unless-stopped postgres:16
 ```
 
-After the first run, `docker start k8aws-postgres` starts the existing database; data persists in the `k8aws-pgdata` volume.
+bash:
+
+```bash
+PG_PASSWORD="choose-a-password"
+docker run -d --name k8aws-postgres -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=api_db -p 5432:5432 -v k8aws-pgdata:/var/lib/postgresql/data --restart unless-stopped postgres:16
+```
+
+### 2. Create the test database
+
+Wait until PostgreSQL reports `accepting connections` (a few seconds on first start), then create the test database. These commands are identical in PowerShell and bash:
+
+```
+docker exec k8aws-postgres pg_isready -U postgres
+docker exec k8aws-postgres psql -U postgres -c "CREATE DATABASE api_db_test;"
+```
+
+### 3. Configure
+
+Copy the template.
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+bash:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` so both URLs use the password from step 1:
+
+```
+DATABASE_URL=postgresql+psycopg2://postgres:choose-a-password@localhost:5432/api_db
+TEST_DATABASE_URL=postgresql+psycopg2://postgres:choose-a-password@localhost:5432/api_db_test
+```
+
+- The `+psycopg2` part selects the installed driver explicitly. SQLAlchemy 2.1 and later default plain `postgresql://` URLs to a different driver (psycopg 3), which is not installed.
+- If the password contains characters such as `@`, `:`, `/` or `%`, URL-encode them in these URLs (for example `@` becomes `%40`).
+
+### 4. Install dependencies
+
+PowerShell:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+bash:
+
+```bash
+python3 -m venv venv
+venv/bin/python -m pip install -r requirements.txt
+```
+
+If `python` is not found on Windows, use `py` instead.
+
+### 5. Create the schema
+
+PowerShell:
+
+```powershell
+.\venv\Scripts\alembic.exe upgrade head
+```
+
+bash:
+
+```bash
+venv/bin/alembic upgrade head
+```
+
+### 6. Run the API
+
+The API is served at http://localhost:8000, with interactive documentation at http://localhost:8000/docs. Stop it with `Ctrl+C`.
+
+PowerShell:
+
+```powershell
+.\venv\Scripts\uvicorn.exe app.main:app --reload
+```
+
+bash:
+
+```bash
+venv/bin/uvicorn app.main:app --reload
+```
+
+### 7. Run the tests
+
+PowerShell:
+
+```powershell
+.\venv\Scripts\python.exe -m pytest
+```
+
+bash:
+
+```bash
+venv/bin/python -m pytest
+```
+
+### Later sessions
+
+The container, its data (in the `k8aws-pgdata` volume) and `venv` persist. Start Docker Desktop, then:
+
+```
+docker start k8aws-postgres
+```
 
 ---
 
