@@ -25,7 +25,8 @@ def client_without_db():
 def client_with_dead_db():
     """A client whose sessions point at a port where no database is listening."""
     dead_engine = create_engine(
-        "postgresql://nobody:nothing@127.0.0.1:1/nodb", connect_args={"connect_timeout": 1}
+        "postgresql+psycopg2://nobody:nothing@127.0.0.1:1/nodb",
+        connect_args={"connect_timeout": 1},
     )
 
     def dead_db():
